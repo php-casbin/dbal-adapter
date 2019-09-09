@@ -36,7 +36,10 @@ use Casbin\Enforcer;
 use CasbinAdapter\DBAL\Adapter as DatabaseAdapter;
 
 $config = [
-    'driver'     => 'mysql', // ibm_db2, pdo_sqlsrv, pdo_mysql, pdo_pgsql, pdo_sqlite
+    // Either 'driver' with one of the following values:
+    // pdo_mysql,pdo_sqlite,pdo_pgsql,pdo_oci (unstable),pdo_sqlsrv,pdo_sqlsrv,
+    // mysqli,sqlanywhere,sqlsrv,ibm_db2 (unstable),drizzle_pdo_mysql
+    'driver' => 'pdo_mysql',
     'host' => '127.0.0.1',
     'dbname' => 'test',
     'user' => 'root',
