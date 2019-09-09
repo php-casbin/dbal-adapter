@@ -199,8 +199,9 @@ class Adapter implements AdapterContract
 
         foreach (range(0, 5) as $value) {
             if ($fieldIndex <= $value && $value < $fieldIndex + count($fieldValues)) {
-                if ('' != $fieldValues[$value - $fieldIndex]) {
-                    $queryBuilder->andWhere('v'.strval($value).' = :'.'v'.strval($value))->setParameter('v'.strval($value), $fieldValues[$value - $fieldIndex]);
+                if ('' != $val = $fieldValues[$value - $fieldIndex]) {
+                    $key = 'v'.strval($value);
+                    $queryBuilder->andWhere($key.' = :'.$key)->setParameter($key, $val);
                 }
             }
         }
