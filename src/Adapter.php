@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace CasbinAdapter\DBAL;
 
 use Casbin\Persist\Adapter as AdapterContract;
@@ -109,7 +111,7 @@ class Adapter implements AdapterContract
      *
      * @param Model $model
      */
-    public function loadPolicy($model)
+    public function loadPolicy(Model $model): void
     {
         $queryBuilder = $this->connection->createQueryBuilder();
         $stmt = $queryBuilder->select('ptype', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5')->from($this->casbinRuleTableName)->execute();
@@ -126,23 +128,19 @@ class Adapter implements AdapterContract
      * saves all policy rules to the storage.
      *
      * @param Model $model
-     *
-     * @return bool
      */
-    public function savePolicy($model)
+    public function savePolicy(Model $model): void
     {
-        foreach ($model->model['p'] as $ptype => $ast) {
+        foreach ($model['p'] as $ptype => $ast) {
             foreach ($ast->policy as $rule) {
                 $this->savePolicyLine($ptype, $rule);
             }
         }
-        foreach ($model->model['g'] as $ptype => $ast) {
+        foreach ($model['g'] as $ptype => $ast) {
             foreach ($ast->policy as $rule) {
                 $this->savePolicyLine($ptype, $rule);
             }
         }
-
-        return true;
     }
 
     /**
@@ -152,12 +150,10 @@ class Adapter implements AdapterContract
      * @param string $sec
      * @param string $ptype
      * @param array  $rule
-     *
-     * @return mixed
      */
-    public function addPolicy($sec, $ptype, $rule)
+    public function addPolicy(string $sec, string $ptype, array $rule): void
     {
-        return $this->savePolicyLine($ptype, $rule);
+        $this->savePolicyLine($ptype, $rule);
     }
 
     /**
@@ -166,10 +162,8 @@ class Adapter implements AdapterContract
      * @param string $sec
      * @param string $ptype
      * @param array  $rule
-     *
-     * @return mixed
      */
-    public function removePolicy($sec, $ptype, $rule)
+    public function removePolicy(string $sec, string $ptype, array $rule): void
     {
         $queryBuilder = $this->connection->createQueryBuilder();
         $queryBuilder->delete($this->casbinRuleTableName)->where('ptype = ?')->setParameter(0, $ptype);
@@ -178,7 +172,7 @@ class Adapter implements AdapterContract
             $queryBuilder->andWhere('v'.strval($key).' = ?')->setParameter($key + 1, $value);
         }
 
-        return $queryBuilder->delete($this->casbinRuleTableName)->execute();
+        $queryBuilder->delete($this->casbinRuleTableName)->execute();
     }
 
     /**
@@ -188,11 +182,9 @@ class Adapter implements AdapterContract
      * @param string $sec
      * @param string $ptype
      * @param int    $fieldIndex
-     * @param mixed  ...$fieldValues
-     *
-     * @return mixed
+     * @param string ...$fieldValues
      */
-    public function removeFilteredPolicy($sec, $ptype, $fieldIndex, ...$fieldValues)
+    public function removeFilteredPolicy(string $sec, string $ptype, int $fieldIndex, string ...$fieldValues): void
     {
         $queryBuilder = $this->connection->createQueryBuilder();
         $queryBuilder->where('ptype = :ptype')->setParameter(':ptype', $ptype);
@@ -206,7 +198,7 @@ class Adapter implements AdapterContract
             }
         }
 
-        return $queryBuilder->delete($this->casbinRuleTableName)->execute();
+        $queryBuilder->delete($this->casbinRuleTableName)->execute();
     }
 
     /**

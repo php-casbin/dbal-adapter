@@ -18,7 +18,7 @@
     ],
     "license": "Apache-2.0",
     "require": {
-        "casbin/casbin": "^1.0",
+        "casbin/casbin": "^2.0",
         "doctrine/dbal": "^2.6"
     },
     "require-dev": {
