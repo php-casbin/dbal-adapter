@@ -28,11 +28,11 @@ class Adapter implements AdapterContract
     protected $connection;
 
     /**
-     * CasbinRule table name.
+     * Casbin policies table name.
      *
      * @var string
      */
-    public $casbinRuleTableName = 'casbin_rule';
+    public $policyTableName = 'casbin_rule';
 
     /**
      * Adapter constructor.
@@ -48,6 +48,10 @@ class Adapter implements AdapterContract
                 $connection,
                 new Configuration()
             );
+
+            if (is_array($connection) && isset($connection['policy_table_name']) && !is_null( $connection['policy_table_name'])){
+                $this->policyTableName = $connection['policy_table_name'];
+            }
         }
 
         $this->initTable();
@@ -73,11 +77,11 @@ class Adapter implements AdapterContract
     public function initTable()
     {
         $sm = $this->connection->getSchemaManager();
-        if (!$sm->tablesExist([$this->casbinRuleTableName])) {
+        if (!$sm->tablesExist([$this->policyTableName])) {
             $schema = new \Doctrine\DBAL\Schema\Schema();
-            $table = $schema->createTable($this->casbinRuleTableName);
+            $table = $schema->createTable($this->policyTableName);
             $table->addColumn('id', 'integer', array('autoincrement' => true));
-            $table->addColumn('ptype', 'string', ['notnull' => false]);
+            $table->addColumn('p_type', 'string', ['notnull' => false]);
             $table->addColumn('v0', 'string', ['notnull' => false]);
             $table->addColumn('v1', 'string', ['notnull' => false]);
             $table->addColumn('v2', 'string', ['notnull' => false]);
@@ -89,15 +93,15 @@ class Adapter implements AdapterContract
         }
     }
 
-    public function savePolicyLine($ptype, array $rule)
+    public function savePolicyLine($pType, array $rule)
     {
         $queryBuilder = $this->connection->createQueryBuilder();
         $queryBuilder
-            ->insert($this->casbinRuleTableName)
+            ->insert($this->policyTableName)
             ->values([
-             'ptype' => '?',
+             'p_type' => '?',
             ])
-            ->setParameter(0, $ptype);
+            ->setParameter(0, $pType);
 
         foreach ($rule as $key => $value) {
             $queryBuilder->setValue('v'.strval($key), '?')->setParameter($key + 1, $value);
@@ -114,7 +118,7 @@ class Adapter implements AdapterContract
     public function loadPolicy(Model $model): void
     {
         $queryBuilder = $this->connection->createQueryBuilder();
-        $stmt = $queryBuilder->select('ptype', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5')->from($this->casbinRuleTableName)->execute();
+        $stmt = $queryBuilder->select('p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5')->from($this->policyTableName)->execute();
 
         while ($row = $stmt->fetch()) {
             $line = implode(', ', array_filter($row, function ($val) {
@@ -131,14 +135,14 @@ class Adapter implements AdapterContract
      */
     public function savePolicy(Model $model): void
     {
-        foreach ($model['p'] as $ptype => $ast) {
+        foreach ($model['p'] as $pType => $ast) {
             foreach ($ast->policy as $rule) {
-                $this->savePolicyLine($ptype, $rule);
+                $this->savePolicyLine($pType, $rule);
             }
         }
-        foreach ($model['g'] as $ptype => $ast) {
+        foreach ($model['g'] as $pType => $ast) {
             foreach ($ast->policy as $rule) {
-                $this->savePolicyLine($ptype, $rule);
+                $this->savePolicyLine($pType, $rule);
             }
         }
     }
@@ -148,31 +152,31 @@ class Adapter implements AdapterContract
      * This is part of the Auto-Save feature.
      *
      * @param string $sec
-     * @param string $ptype
+     * @param string $pType
      * @param array  $rule
      */
-    public function addPolicy(string $sec, string $ptype, array $rule): void
+    public function addPolicy(string $sec, string $pType, array $rule): void
     {
-        $this->savePolicyLine($ptype, $rule);
+        $this->savePolicyLine($pType, $rule);
     }
 
     /**
      * This is part of the Auto-Save feature.
      *
      * @param string $sec
-     * @param string $ptype
+     * @param string $pType
      * @param array  $rule
      */
-    public function removePolicy(string $sec, string $ptype, array $rule): void
+    public function removePolicy(string $sec, string $pType, array $rule): void
     {
         $queryBuilder = $this->connection->createQueryBuilder();
-        $queryBuilder->delete($this->casbinRuleTableName)->where('ptype = ?')->setParameter(0, $ptype);
+        $queryBuilder->delete($this->policyTableName)->where('p_type = ?')->setParameter(0, $pType);
 
         foreach ($rule as $key => $value) {
             $queryBuilder->andWhere('v'.strval($key).' = ?')->setParameter($key + 1, $value);
         }
 
-        $queryBuilder->delete($this->casbinRuleTableName)->execute();
+        $queryBuilder->delete($this->policyTableName)->execute();
     }
 
     /**
@@ -180,14 +184,14 @@ class Adapter implements AdapterContract
      * This is part of the Auto-Save feature.
      *
      * @param string $sec
-     * @param string $ptype
+     * @param string $pType
      * @param int    $fieldIndex
      * @param string ...$fieldValues
      */
-    public function removeFilteredPolicy(string $sec, string $ptype, int $fieldIndex, string ...$fieldValues): void
+    public function removeFilteredPolicy(string $sec, string $pType, int $fieldIndex, string ...$fieldValues): void
     {
         $queryBuilder = $this->connection->createQueryBuilder();
-        $queryBuilder->where('ptype = :ptype')->setParameter(':ptype', $ptype);
+        $queryBuilder->where('p_type = :pType')->setParameter(':pType', $pType);
 
         foreach (range(0, 5) as $value) {
             if ($fieldIndex <= $value && $value < $fieldIndex + count($fieldValues)) {
@@ -198,7 +202,7 @@ class Adapter implements AdapterContract
             }
         }
 
-        $queryBuilder->delete($this->casbinRuleTableName)->execute();
+        $queryBuilder->delete($this->policyTableName)->execute();
     }
 
     /**

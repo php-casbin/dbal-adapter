@@ -27,17 +27,17 @@ class AdapterTest extends TestCase
 
     protected function initDb(DatabaseAdapter $adapter)
     {
-        $tableName = $adapter->casbinRuleTableName;
+        $tableName = $adapter->policyTableName;
         $conn = $adapter->getConnection();
         $queryBuilder = $conn->createQueryBuilder();
         $queryBuilder->delete($tableName)->where('1 = 1')->execute();
 
         $data = [
-            ['ptype' => 'p', 'v0' => 'alice', 'v1' => 'data1', 'v2' => 'read'],
-            ['ptype' => 'p', 'v0' => 'bob', 'v1' => 'data2', 'v2' => 'write'],
-            ['ptype' => 'p', 'v0' => 'data2_admin', 'v1' => 'data2', 'v2' => 'read'],
-            ['ptype' => 'p', 'v0' => 'data2_admin', 'v1' => 'data2', 'v2' => 'write'],
-            ['ptype' => 'g', 'v0' => 'alice', 'v1' => 'data2_admin'],
+            ['p_type' => 'p', 'v0' => 'alice', 'v1' => 'data1', 'v2' => 'read'],
+            ['p_type' => 'p', 'v0' => 'bob', 'v1' => 'data2', 'v2' => 'write'],
+            ['p_type' => 'p', 'v0' => 'data2_admin', 'v1' => 'data2', 'v2' => 'read'],
+            ['p_type' => 'p', 'v0' => 'data2_admin', 'v1' => 'data2', 'v2' => 'write'],
+            ['p_type' => 'g', 'v0' => 'alice', 'v1' => 'data2_admin'],
         ];
         foreach ($data as $row) {
             $queryBuilder->insert($tableName)->values(array_combine(array_keys($row), array_fill(0, count($row), '?')))->setParameters(array_values($row))->execute();
@@ -47,11 +47,7 @@ class AdapterTest extends TestCase
     protected function getEnforcer()
     {
         $this->initConfig();
-        $connection = DriverManager::getConnection(
-            $this->config,
-            new Configuration()
-        );
-        $adapter = DatabaseAdapter::newAdapter($connection);
+        $adapter = DatabaseAdapter::newAdapter($this->config);
 
         $this->initDb($adapter);
         $model = Model::newModelFromString(
