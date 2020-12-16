@@ -17,7 +17,7 @@ class AdapterTest extends TestCase
     {
         $this->config = [
             'driver' => 'pdo_mysql', // ibm_db2, pdo_sqlsrv, pdo_mysql, pdo_pgsql, pdo_sqlite
-            'host' => $this->env('DB_PORT', '127.0.0.1'),
+            'host' => $this->env('DB_HOST', '127.0.0.1'),
             'dbname' => $this->env('DB_DATABASE', 'casbin'),
             'user' => $this->env('DB_USERNAME', 'root'),
             'password' => $this->env('DB_PASSWORD', ''),
