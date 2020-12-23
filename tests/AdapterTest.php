@@ -2,76 +2,13 @@
 
 namespace CasbinAdapter\DBAL\Tests;
 
-use Casbin\Enforcer;
-use Casbin\Model\Model;
 use CasbinAdapter\DBAL\Adapter as DatabaseAdapter;
-use PHPUnit\Framework\TestCase;
-use Doctrine\DBAL\Configuration;
-use Doctrine\DBAL\DriverManager;
+use CasbinAdapter\DBAL\Filter;
+use Doctrine\DBAL\Query\Expression\CompositeExpression;
+use Doctrine\DBAL\Query\QueryBuilder;
 
 class AdapterTest extends TestCase
 {
-    protected $config = [];
-
-    protected function initConfig()
-    {
-        $this->config = [
-            'driver' => 'pdo_mysql', // ibm_db2, pdo_sqlsrv, pdo_mysql, pdo_pgsql, pdo_sqlite
-            'host' => $this->env('DB_HOST', '127.0.0.1'),
-            'dbname' => $this->env('DB_DATABASE', 'casbin'),
-            'user' => $this->env('DB_USERNAME', 'root'),
-            'password' => $this->env('DB_PASSWORD', ''),
-            'port' => $this->env('DB_PORT', 3306),
-        ];
-    }
-
-    protected function initDb(DatabaseAdapter $adapter)
-    {
-        $tableName = $adapter->policyTableName;
-        $conn = $adapter->getConnection();
-        $queryBuilder = $conn->createQueryBuilder();
-        $queryBuilder->delete($tableName)->where('1 = 1')->execute();
-
-        $data = [
-            ['p_type' => 'p', 'v0' => 'alice', 'v1' => 'data1', 'v2' => 'read'],
-            ['p_type' => 'p', 'v0' => 'bob', 'v1' => 'data2', 'v2' => 'write'],
-            ['p_type' => 'p', 'v0' => 'data2_admin', 'v1' => 'data2', 'v2' => 'read'],
-            ['p_type' => 'p', 'v0' => 'data2_admin', 'v1' => 'data2', 'v2' => 'write'],
-            ['p_type' => 'g', 'v0' => 'alice', 'v1' => 'data2_admin'],
-        ];
-        foreach ($data as $row) {
-            $queryBuilder->insert($tableName)->values(array_combine(array_keys($row), array_fill(0, count($row), '?')))->setParameters(array_values($row))->execute();
-        }
-    }
-
-    protected function getEnforcer()
-    {
-        $this->initConfig();
-        $adapter = DatabaseAdapter::newAdapter($this->config);
-
-        $this->initDb($adapter);
-        $model = Model::newModelFromString(
-            <<<'EOT'
-[request_definition]
-r = sub, obj, act
-
-[policy_definition]
-p = sub, obj, act
-
-[role_definition]
-g = _, _
-
-[policy_effect]
-e = some(where (p.eft == allow))
-
-[matchers]
-m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act
-EOT
-        );
-
-        return new Enforcer($model, $adapter);
-    }
-
     public function testLoadPolicy()
     {
         $e = $this->getEnforcer();
@@ -82,6 +19,49 @@ EOT
         $this->assertTrue($e->enforce('alice', 'data2', 'write'));
     }
 
+    public function testLoadFilteredPolicy()
+    {
+        $this->initConfig();
+        $adapter = DatabaseAdapter::newAdapter($this->config);
+        $adapter->setFiltered(true);
+        $e = $this->getEnforcerWithAdapter($adapter);
+        $this->assertEquals([], $e->getPolicy());
+
+        // string
+        $filter = "v0 = 'bob'";
+        $e->loadFilteredPolicy($filter);
+        $this->assertEquals([
+            ['bob', 'data2', 'write']
+        ], $e->getPolicy());
+
+        // CompositeExpression
+        $queryBuilder = new QueryBuilder($adapter->getConnection());
+        $e->loadFilteredPolicy(
+            $queryBuilder->expr()->in("v0", ['"alice", "bob"'])
+        );
+        $this->assertEquals([
+            ['alice', 'data1', 'read'],
+            ['bob', 'data2', 'write'],
+        ], $e->getPolicy());
+
+        // Filter
+        $filter = new Filter('v2 = ?', ['read']);
+        $e->loadFilteredPolicy($filter);
+        $this->assertEquals([
+            ['alice', 'data1', 'read'],
+            ['data2_admin', 'data2', 'read'],
+        ], $e->getPolicy());
+
+        // Closure
+        $e->loadFilteredPolicy(function (QueryBuilder &$queryBuilder) {
+            $queryBuilder->where('v1 = :v1')->setParameter('v1', 'data1');
+        });
+
+        $this->assertEquals([
+            ['alice', 'data1', 'read'],
+        ], $e->getPolicy());
+    }
+
     public function testAddPolicy()
     {
         $e = $this->getEnforcer();
@@ -89,6 +69,21 @@ EOT
 
         $e->addPermissionForUser('eve', 'data3', 'read');
         $this->assertTrue($e->enforce('eve', 'data3', 'read'));
+    }
+
+    public function testAddPolicies()
+    {
+        $policies = [
+            ['u1', 'd1', 'read'],
+            ['u2', 'd2', 'read'],
+            ['u3', 'd3', 'read'],
+        ];
+        $e = $this->getEnforcer();
+        $e->clearPolicy();
+        $this->initDb($this->adapter);
+        $this->assertEquals([], $e->getPolicy());
+        $e->addPolicies($policies);
+        $this->assertEquals($policies, $e->getPolicy());
     }
 
     public function testSavePolicy()
@@ -115,6 +110,27 @@ EOT
         $this->assertFalse($e->enforce('alice', 'data5', 'read'));
     }
 
+    public function testRemovePolicies()
+    {
+        $e = $this->getEnforcer();
+        $this->assertEquals([
+            ['alice', 'data1', 'read'],
+            ['bob', 'data2', 'write'],
+            ['data2_admin', 'data2', 'read'],
+            ['data2_admin', 'data2', 'write'],
+        ], $e->getPolicy());
+
+        $e->removePolicies([
+            ['data2_admin', 'data2', 'read'],
+            ['data2_admin', 'data2', 'write'],
+        ]);
+
+        $this->assertEquals([
+            ['alice', 'data1', 'read'],
+            ['bob', 'data2', 'write']
+        ], $e->getPolicy());
+    }
+
     public function testRemoveFilteredPolicy()
     {
         $e = $this->getEnforcer();
@@ -138,13 +154,31 @@ EOT
         $this->assertFalse($e->enforce('alice', 'data2', 'write'));
     }
 
-    protected function env($key, $default = null)
+    public function testUpdatePolicy()
     {
-        $value = getenv($key);
-        if (is_null($default)) {
-            return $value;
-        }
+        $e = $this->getEnforcer();
+        $this->assertEquals([
+            ['alice', 'data1', 'read'],
+            ['bob', 'data2', 'write'],
+            ['data2_admin', 'data2', 'read'],
+            ['data2_admin', 'data2', 'write'],
+        ], $e->getPolicy());
 
-        return false === $value ? $default : $value;
+        $e->updatePolicy(
+            ['alice', 'data1', 'read'],
+            ['alice', 'data1', 'write']
+        );
+
+        $e->updatePolicy(
+            ['bob', 'data2', 'write'],
+            ['bob', 'data2', 'read']
+        );
+
+        $this->assertEquals([
+            ['alice', 'data1', 'write'],
+            ['bob', 'data2', 'read'],
+            ['data2_admin', 'data2', 'read'],
+            ['data2_admin', 'data2', 'write'],
+        ], $e->getPolicy());
     }
 }
