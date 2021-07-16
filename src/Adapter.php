@@ -240,6 +240,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
 
         $columnsCount = count($columns);
         foreach ($rules as $rule) {
+            array_unshift($rule, $ptype);
             $values = array_merge($values, array_pad($rule, $columnsCount, null));
             $sets[] = array_pad([], $columnsCount, '?');
         }
