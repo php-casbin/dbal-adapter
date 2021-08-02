@@ -362,6 +362,24 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
     }
 
     /**
+     * UpdatePolicies updates some policy rules to storage, like db, redis.
+     *
+     * @param string $sec
+     * @param string $ptype
+     * @param string[][] $oldRules
+     * @param string[][] $newRules
+     * @return void
+     */
+    public function updatePolicies(string $sec, string $ptype, array $oldRules, array $newRules): void
+    {
+        $this->connection->transactional(function () use ($sec, $ptype, $oldRules, $newRules) {
+            foreach ($oldRules as $i => $oldRule) {
+                $this->updatePolicy($sec, $ptype, $oldRule, $newRules[$i]);
+            }
+        });
+    }
+
+    /**
      * Returns true if the loaded policy has been filtered.
      *
      * @return bool
