@@ -181,4 +181,34 @@ class AdapterTest extends TestCase
             ['data2_admin', 'data2', 'write'],
         ], $e->getPolicy());
     }
+
+    public function testUpdatePolicies()
+    {
+        $e = $this->getEnforcer();
+        $this->assertEquals([
+            ['alice', 'data1', 'read'],
+            ['bob', 'data2', 'write'],
+            ['data2_admin', 'data2', 'read'],
+            ['data2_admin', 'data2', 'write'],
+        ], $e->getPolicy());
+
+        $oldPolicies = [
+            ['alice', 'data1', 'read'],
+            ['bob', 'data2', 'write']
+        ];
+
+        $newPolicies = [
+            ['alice', 'data1', 'write'],
+            ['bob', 'data2', 'read']
+        ];
+
+        $e->updatePolicies($oldPolicies, $newPolicies);
+
+        $this->assertEquals([
+            ['alice', 'data1', 'write'],
+            ['bob', 'data2', 'read'],
+            ['data2_admin', 'data2', 'read'],
+            ['data2_admin', 'data2', 'write'],
+        ], $e->getPolicy());
+    }
 }
