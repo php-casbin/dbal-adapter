@@ -151,10 +151,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
         $stmt = $queryBuilder->select('p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5')->from($this->policyTableName)->execute();
 
         while ($row = $this->fetch($stmt)) {
-            $line = implode(', ', array_filter($row, function ($val) {
-                return '' != $val && !is_null($val);
-            }));
-            $this->loadPolicyLine(trim($line), $model);
+            $this->loadPolicyArray($this->filterRule($row), $model);
         }
     }
 
@@ -437,11 +434,16 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      */
     public function filterRule(array $rule): array
     {
-        $rule = array_filter($rule, function ($val) {
-            return '' != $val && !is_null($val);
-        });
+        $rule = array_values($rule);
 
-        return array_values($rule);
+        $i = count($rule) - 1;
+        for (; $i >= 0; $i--) {
+            if ($rule[$i] != "" && !is_null($rule[$i])) {
+                break;
+            }
+        }
+
+        return array_slice($rule, 0, $i + 1);
     }
 
     /**
