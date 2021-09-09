@@ -8,3 +8,5 @@ composer.lock
 
 # coverage report
 /build
+
+.phpunit.*
