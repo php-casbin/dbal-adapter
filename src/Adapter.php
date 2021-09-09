@@ -11,12 +11,14 @@ use Casbin\Persist\FilteredAdapter;
 use Casbin\Persist\UpdatableAdapter;
 use Closure;
 use Doctrine\DBAL\Configuration;
+use Doctrine\DBAL\DBALException;
 use Doctrine\DBAL\Driver\ResultStatement;
-use Doctrine\DBAL\Driver\Statement;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception;
 use Doctrine\DBAL\Query\Expression\CompositeExpression;
+use Doctrine\DBAL\Result;
+use Doctrine\DBAL\Schema\Schema;
 use Throwable;
 
 /**
@@ -46,6 +48,11 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      * @var bool
      */
     private $filtered = false;
+
+    /**
+     * @var string[]
+     */
+    protected $columns = ['p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5'];
 
     /**
      * Adapter constructor.
@@ -93,7 +100,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
     {
         $sm = $this->connection->getSchemaManager();
         if (!$sm->tablesExist([$this->policyTableName])) {
-            $schema = new \Doctrine\DBAL\Schema\Schema();
+            $schema = new Schema();
             $table = $schema->createTable($this->policyTableName);
             $table->addColumn('id', 'integer', array('autoincrement' => true));
             $table->addColumn('p_type', 'string', ['notnull' => false]);
@@ -228,8 +235,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      * @param string $ptype
      * @param string[][] $rules
      *
-     * @throws Exception
-     * @throws \Doctrine\DBAL\DBALException
+     * @throws DBALException
      */
     public function addPolicies(string $sec, string $ptype, array $rules): void
     {
@@ -307,6 +313,41 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
     }
 
     /**
+     * @param string $sec
+     * @param string $ptype
+     * @param int $fieldIndex
+     * @param string|null ...$fieldValues
+     * @return array
+     * @throws Throwable
+     */
+    public function _removeFilteredPolicy(string $sec, string $ptype, int $fieldIndex, ?string ...$fieldValues): array
+    {
+        $removedRules = [];
+        $this->connection->transactional(function (Connection $conn) use ($ptype, $fieldIndex, $fieldValues, &$removedRules) {
+            $queryBuilder = $conn->createQueryBuilder();
+            $queryBuilder->where('p_type = :ptype')->setParameter('ptype', $ptype);
+
+            foreach ($fieldValues as $value) {
+                if (!is_null($value) && $value !== '') {
+                    $key = 'v' . strval($fieldIndex);
+                    $queryBuilder->andWhere($key . ' = :' . $key)->setParameter($key, $value);
+                }
+                $fieldIndex++;
+            }
+
+            $stmt = $queryBuilder->select(...$this->columns)->from($this->policyTableName)->execute();
+
+            while ($row = $this->fetch($stmt)) {
+                $removedRules[] = $this->filterRule($row);
+            }
+
+            $queryBuilder->delete($this->policyTableName)->execute();
+        });
+
+        return $removedRules;
+    }
+
+    /**
      * RemoveFilteredPolicy removes policy rules that match the filter from the storage.
      * This is part of the Auto-Save feature.
      *
@@ -314,23 +355,11 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      * @param string $ptype
      * @param int $fieldIndex
      * @param string ...$fieldValues
-     * @throws Exception
+     * @throws Exception|Throwable
      */
     public function removeFilteredPolicy(string $sec, string $ptype, int $fieldIndex, string ...$fieldValues): void
     {
-        $queryBuilder = $this->connection->createQueryBuilder();
-        $queryBuilder->where('p_type = :ptype')->setParameter('ptype', $ptype);
-
-        foreach (range(0, 5) as $value) {
-            if ($fieldIndex <= $value && $value < $fieldIndex + count($fieldValues)) {
-                if ('' != $val = $fieldValues[$value - $fieldIndex]) {
-                    $key = 'v' . strval($value);
-                    $queryBuilder->andWhere($key . ' = :' . $key)->setParameter($key, $val);
-                }
-            }
-        }
-
-        $queryBuilder->delete($this->policyTableName)->execute();
+        $this->_removeFilteredPolicy($sec, $ptype, $fieldIndex, ...$fieldValues);
     }
 
     /**
@@ -369,6 +398,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      * @param string[][] $oldRules
      * @param string[][] $newRules
      * @return void
+     * @throws Throwable
      */
     public function updatePolicies(string $sec, string $ptype, array $oldRules, array $newRules): void
     {
@@ -377,6 +407,41 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
                 $this->updatePolicy($sec, $ptype, $oldRule, $newRules[$i]);
             }
         });
+    }
+
+    /**
+     * @param string $sec
+     * @param string $ptype
+     * @param array $newRules
+     * @param int $fieldIndex
+     * @param string ...$fieldValues
+     * @return array
+     * @throws Throwable
+     */
+    public function updateFilteredPolicies(string $sec, string $ptype, array $newRules, int $fieldIndex, ?string ...$fieldValues): array
+    {
+        $oldRules = [];
+        $this->getConnection()->transactional(function ($conn) use ($sec, $ptype, $newRules, $fieldIndex, $fieldValues, &$oldRules) {
+            $oldRules = $this->_removeFilteredPolicy($sec, $ptype, $fieldIndex, ...$fieldValues);
+            $this->addPolicies($sec, $ptype, $newRules);
+        });
+
+        return $oldRules;
+    }
+
+    /**
+     * Filter the rule.
+     *
+     * @param array $rule
+     * @return array
+     */
+    public function filterRule(array $rule): array
+    {
+        $rule = array_filter($rule, function ($val) {
+            return '' != $val && !is_null($val);
+        });
+
+        return array_values($rule);
     }
 
     /**
@@ -410,11 +475,22 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
     }
 
     /**
+     * Gets columns.
+     *
+     * @return string[]
+     */
+    public function getColumns(): array
+    {
+        return $this->columns;
+    }
+
+    /**
      * @param mixed $stmt
      *
      * @return mixed
+     * @throws Exception
      */
-    private function fetch($stmt)
+    private function fetch(Result $stmt)
     {
         if (method_exists($stmt, 'fetchAssociative')) {
             return $stmt->fetchAssociative();
@@ -422,4 +498,5 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
 
         return $stmt->fetch();
     }
+
 }
