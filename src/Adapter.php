@@ -17,7 +17,6 @@ use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception;
 use Doctrine\DBAL\Query\Expression\CompositeExpression;
-use Doctrine\DBAL\Result;
 use Doctrine\DBAL\Schema\Schema;
 use Throwable;
 
@@ -487,12 +486,12 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
     }
 
     /**
-     * @param mixed $stmt
+     * @param \Doctrine\DBAL\Result|\Doctrine\DBAL\Driver\PDOStatement $stmt
      *
      * @return mixed
      * @throws Exception
      */
-    private function fetch(Result $stmt)
+    private function fetch($stmt)
     {
         if (method_exists($stmt, 'fetchAssociative')) {
             return $stmt->fetchAssociative();
