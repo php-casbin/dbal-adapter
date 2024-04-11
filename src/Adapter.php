@@ -97,7 +97,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      */
     public function initTable()
     {
-        $sm = $this->connection->getSchemaManager();
+        $sm = $this->connection->createSchemaManager();
         if (!$sm->tablesExist([$this->policyTableName])) {
             $schema = new Schema();
             $table = $schema->createTable($this->policyTableName);
@@ -147,7 +147,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
     public function loadPolicy(Model $model): void
     {
         $queryBuilder = $this->connection->createQueryBuilder();
-        $stmt = $queryBuilder->select('p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5')->from($this->policyTableName)->execute();
+        $stmt = $queryBuilder->select('p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5')->from($this->policyTableName)->executeQuery();
 
         while ($row = $this->fetch($stmt)) {
             $this->loadPolicyArray($this->filterRule($row), $model);
