@@ -40,7 +40,8 @@ class AdapterTest extends TestCase
             ["p", "bob", "data", "write", "allow"]
         ], $oldRules);
 
-        $stmt = $conn->createQueryBuilder()->from($adapter->policyTableName)->where('p_type = "p" and v1 = "data" and v3 = "allow"')->select("v0", "v1", "v2", "v3")->execute();
+        $query = $conn->createQueryBuilder()->from($adapter->policyTableName)->where('p_type = "p" and v1 = "data" and v3 = "allow"')->select("v0", "v1", "v2", "v3");
+        $stmt = method_exists($query, "executeQuery") ? $query->executeQuery() : $query->execute();
         $result = method_exists($stmt, 'fetchAssociative') ? $stmt->fetchAllAssociative() : $stmt->fetchAll();
 
         $result = array_map([$adapter, "filterRule"], $result);

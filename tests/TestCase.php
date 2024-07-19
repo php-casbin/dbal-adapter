@@ -32,7 +32,8 @@ class TestCase extends \PHPUnit\Framework\TestCase
         $tableName = $adapter->policyTableName;
         $conn = $adapter->getConnection();
         $queryBuilder = $conn->createQueryBuilder();
-        $queryBuilder->delete($tableName)->where('1 = 1')->execute();
+        $query = $queryBuilder->delete($tableName)->where('1 = 1');
+        method_exists($query, "executeQuery") ? $query->executeQuery() : $query->execute();
 
         $data = [
             ['p_type' => 'p', 'v0' => 'alice', 'v1' => 'data1', 'v2' => 'read'],
@@ -42,7 +43,8 @@ class TestCase extends \PHPUnit\Framework\TestCase
             ['p_type' => 'g', 'v0' => 'alice', 'v1' => 'data2_admin'],
         ];
         foreach ($data as $row) {
-            $queryBuilder->insert($tableName)->values(array_combine(array_keys($row), array_fill(0, count($row), '?')))->setParameters(array_values($row))->execute();
+            $query = $queryBuilder->insert($tableName)->values(array_combine(array_keys($row), array_fill(0, count($row), '?')))->setParameters(array_values($row));
+            method_exists($query, "executeQuery") ? $query->executeQuery() : $query->execute();
         }
     }
 

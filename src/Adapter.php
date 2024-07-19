@@ -135,7 +135,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
             $queryBuilder->setValue('v' . strval($key), '?')->setParameter($key + 1, $value);
         }
 
-        return $queryBuilder->execute();
+        return $this->executeQuery($queryBuilder);
     }
 
     /**
@@ -147,8 +147,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
     public function loadPolicy(Model $model): void
     {
         $queryBuilder = $this->connection->createQueryBuilder();
-        $query = $queryBuilder->select('p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5')->from($this->policyTableName);
-        $stmt = method_exists($query, "executeQuery") ? $query->executeQuery() : $query->execute();
+        $stmt = $this->executeQuery($queryBuilder->select('p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5')->from($this->policyTableName));
 
         while ($row = $this->fetch($stmt)) {
             $this->loadPolicyArray($this->filterRule($row), $model);
@@ -180,7 +179,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
             throw new \Exception('invalid filter type');
         }
 
-        $stmt = $queryBuilder->from($this->policyTableName)->execute();
+        $stmt = $this->executeQuery($queryBuilder->from($this->policyTableName));
         while ($row = $this->fetch($stmt)) {
             $line = implode(', ', array_filter($row, function ($val) {
                 return '' != $val && !is_null($val);
@@ -255,7 +254,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
         $sql = 'INSERT INTO ' . $table . ' (' . implode(', ', $columns) . ')' .
             ' VALUES' . $valuesStr;
 
-        $this->connection->executeUpdate($sql, $values);
+        $this->connection->executeStatement($sql, $values);
     }
 
     /**
@@ -275,7 +274,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
             $queryBuilder->andWhere('v' . strval($key) . ' = ?')->setParameter($key + 1, $value);
         }
 
-        $queryBuilder->delete($this->policyTableName)->execute();
+        $this->executeQuery($queryBuilder->delete($this->policyTableName));
     }
 
     /**
@@ -332,13 +331,13 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
                 $fieldIndex++;
             }
 
-            $stmt = $queryBuilder->select(...$this->columns)->from($this->policyTableName)->execute();
+            $stmt = $this->executeQuery($queryBuilder->select(...$this->columns)->from($this->policyTableName));
 
             while ($row = $this->fetch($stmt)) {
                 $removedRules[] = $this->filterRule($row);
             }
 
-            $queryBuilder->delete($this->policyTableName)->execute();
+            $this->executeQuery($queryBuilder->delete($this->policyTableName));
         });
 
         return $removedRules;
@@ -384,7 +383,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
 
         $queryBuilder->update($this->policyTableName);
 
-        $queryBuilder->execute();
+        $this->executeQuery($queryBuilder);
     }
 
     /**
@@ -499,6 +498,19 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
         }
 
         return $stmt->fetch();
+    }
+
+    /**
+     * Calls correct query execution method depending on Doctrine version and
+     * returns the result.
+     *
+     * @param \Doctrine\DBAL\Query\QueryBuilder $query
+     *
+     * @return mixed
+     */
+    private function executeQuery($query)
+    {
+        return method_exists($query, "executeQuery") ? $query->executeQuery() : $query->execute();
     }
 
 }
