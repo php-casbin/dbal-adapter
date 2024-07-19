@@ -6,10 +6,10 @@ use CasbinAdapter\DBAL\Adapter as DatabaseAdapter;
 use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception;
+use Doctrine\DBAL\Logging\Middleware as LoggingMiddleware;
 
 class AdapterTest extends TestCase
 {
-
     /**
      * @throws Exception
      */
@@ -17,8 +17,7 @@ class AdapterTest extends TestCase
     {
         $this->initConfig();
         $connConfig = new Configuration();
-        $logger = new DebugStackLogger();
-        $connConfig->setSQLLogger($logger);
+        $this->configureLogger($connConfig);
         $conn = DriverManager::getConnection(
             $this->config,
             $connConfig
@@ -47,5 +46,24 @@ class AdapterTest extends TestCase
         $result = array_map([$adapter, "filterRule"], $result);
 
         $this->assertEquals($newPolicies, $result);
+    }
+
+    /**
+     *
+     * @param \Doctrine\DBAL\Configuration $connConfig
+     * @return void
+     */
+    private function configureLogger($connConfig)
+    {
+        // Doctrine < 4.0
+        if(method_exists($connConfig, "setSQLLogger")) {
+            $connConfig->setSQLLogger(new DebugStackLogger());
+        }
+        // Doctrine >= 4.0
+        else {
+            $connConfig->setMiddlewares([
+              new LoggingMiddleware(new PsrLogger())
+            ]);
+        }
     }
 }
