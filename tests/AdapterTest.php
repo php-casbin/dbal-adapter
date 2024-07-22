@@ -6,10 +6,10 @@ use CasbinAdapter\DBAL\Adapter as DatabaseAdapter;
 use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception;
+use Doctrine\DBAL\Logging\Middleware as LoggingMiddleware;
 
 class AdapterTest extends TestCase
 {
-
     /**
      * @throws Exception
      */
@@ -17,8 +17,7 @@ class AdapterTest extends TestCase
     {
         $this->initConfig();
         $connConfig = new Configuration();
-        $logger = new DebugStackLogger();
-        $connConfig->setSQLLogger($logger);
+        $this->configureLogger($connConfig);
         $conn = DriverManager::getConnection(
             $this->config,
             $connConfig
@@ -40,11 +39,31 @@ class AdapterTest extends TestCase
             ["p", "bob", "data", "write", "allow"]
         ], $oldRules);
 
-        $stmt = $conn->createQueryBuilder()->from($adapter->policyTableName)->where('p_type = "p" and v1 = "data" and v3 = "allow"')->select("v0", "v1", "v2", "v3")->execute();
+        $query = $conn->createQueryBuilder()->from($adapter->policyTableName)->where('p_type = "p" and v1 = "data" and v3 = "allow"')->select("v0", "v1", "v2", "v3");
+        $stmt = method_exists($query, "executeQuery") ? $query->executeQuery() : $query->execute();
         $result = method_exists($stmt, 'fetchAssociative') ? $stmt->fetchAllAssociative() : $stmt->fetchAll();
 
         $result = array_map([$adapter, "filterRule"], $result);
 
         $this->assertEquals($newPolicies, $result);
+    }
+
+    /**
+     *
+     * @param \Doctrine\DBAL\Configuration $connConfig
+     * @return void
+     */
+    private function configureLogger($connConfig)
+    {
+        // Doctrine < 4.0
+        if(method_exists($connConfig, "setSQLLogger")) {
+            $connConfig->setSQLLogger(new DebugStackLogger());
+        }
+        // Doctrine >= 4.0
+        else {
+            $connConfig->setMiddlewares([
+              new LoggingMiddleware(new PsrLogger())
+            ]);
+        }
     }
 }
