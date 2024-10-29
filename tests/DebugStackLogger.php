@@ -3,7 +3,6 @@
 
 namespace CasbinAdapter\DBAL\Tests;
 
-use Doctrine\DBAL\Logging\DebugStack;
 use Doctrine\DBAL\Logging\SQLLogger;
 
 class DebugStackLogger implements SQLLogger

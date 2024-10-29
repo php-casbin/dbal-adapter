@@ -102,13 +102,13 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
             $schema = new Schema();
             $table = $schema->createTable($this->policyTableName);
             $table->addColumn('id', 'integer', array('autoincrement' => true));
-            $table->addColumn('p_type', 'string', ['notnull' => false]);
-            $table->addColumn('v0', 'string', ['notnull' => false]);
-            $table->addColumn('v1', 'string', ['notnull' => false]);
-            $table->addColumn('v2', 'string', ['notnull' => false]);
-            $table->addColumn('v3', 'string', ['notnull' => false]);
-            $table->addColumn('v4', 'string', ['notnull' => false]);
-            $table->addColumn('v5', 'string', ['notnull' => false]);
+            $table->addColumn('p_type', 'string', ['notnull' => false, 'length' => 32]);
+            $table->addColumn('v0', 'string', ['notnull' => false, 'length' => 255]);
+            $table->addColumn('v1', 'string', ['notnull' => false, 'length' => 255]);
+            $table->addColumn('v2', 'string', ['notnull' => false, 'length' => 255]);
+            $table->addColumn('v3', 'string', ['notnull' => false, 'length' => 255]);
+            $table->addColumn('v4', 'string', ['notnull' => false, 'length' => 255]);
+            $table->addColumn('v5', 'string', ['notnull' => false, 'length' => 255]);
             $table->setPrimaryKey(['id']);
             $sm->createTable($table);
         }
