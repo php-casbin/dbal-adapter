@@ -6,16 +6,12 @@ namespace CasbinAdapter\DBAL;
 
 use Casbin\Persist\AdapterHelper;
 use Casbin\Model\Model;
-use Casbin\Persist\BatchAdapter;
-use Casbin\Persist\FilteredAdapter;
-use Casbin\Persist\UpdatableAdapter;
+use Casbin\Persist\{BatchAdapter, FilteredAdapter, UpdatableAdapter};
 use Closure;
 use Doctrine\DBAL\Configuration;
-use Doctrine\DBAL\DBALException;
-use Doctrine\DBAL\Driver\ResultStatement;
+use Doctrine\DBAL\{DBALException, Exception};
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\Exception;
 use Doctrine\DBAL\Query\Expression\CompositeExpression;
 use Doctrine\DBAL\Schema\Schema;
 use Throwable;
@@ -23,7 +19,7 @@ use Throwable;
 /**
  * DBAL Adapter.
  *
- * @author techlee@qq.com
+ * @author leeqvip@gmail.com
  */
 class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
 {
@@ -34,24 +30,24 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      *
      * @var Connection
      */
-    protected $connection;
+    protected Connection $connection;
 
     /**
      * Casbin policies table name.
      *
      * @var string
      */
-    public $policyTableName = 'casbin_rule';
+    public string $policyTableName = 'casbin_rule';
 
     /**
      * @var bool
      */
-    private $filtered = false;
+    private bool $filtered = false;
 
     /**
      * @var string[]
      */
-    protected $columns = ['p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5'];
+    protected array $columns = ['p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5'];
 
     /**
      * Adapter constructor.
@@ -59,7 +55,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      * @param Connection|array $connection
      * @throws Exception
      */
-    public function __construct($connection)
+    public function __construct(Connection|array $connection)
     {
         if ($connection instanceof Connection) {
             $this->connection = $connection;
@@ -85,7 +81,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      * @return Adapter
      * @throws Exception
      */
-    public static function newAdapter($connection): Adapter
+    public static function newAdapter(Connection|array $connection): Adapter
     {
         return new static($connection);
     }
@@ -95,9 +91,9 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      *
      * @return void
      */
-    public function initTable()
+    public function initTable(): void
     {
-        $sm = method_exists($this->connection, "createSchemaManager") ? $sm = $this->connection->createSchemaManager() : $sm = $this->connection->getSchemaManager();
+        $sm = $this->connection->createSchemaManager();
         if (!$sm->tablesExist([$this->policyTableName])) {
             $schema = new Schema();
             $table = $schema->createTable($this->policyTableName);
@@ -118,10 +114,10 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      * @param $pType
      * @param array $rule
      *
-     * @return ResultStatement|int
+     * @return int|string
      * @throws Exception
      */
-    public function savePolicyLine($pType, array $rule)
+    public function savePolicyLine(string $pType, array $rule): int|string
     {
         $queryBuilder = $this->connection->createQueryBuilder();
         $queryBuilder
@@ -135,7 +131,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
             $queryBuilder->setValue('v' . strval($key), '?')->setParameter($key + 1, $value);
         }
 
-        return $this->executeQuery($queryBuilder);
+        return $queryBuilder->executeStatement();
     }
 
     /**
@@ -147,9 +143,9 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
     public function loadPolicy(Model $model): void
     {
         $queryBuilder = $this->connection->createQueryBuilder();
-        $stmt = $this->executeQuery($queryBuilder->select('p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5')->from($this->policyTableName));
+        $stmt = $queryBuilder->select('p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5')->from($this->policyTableName)->executeQuery();
 
-        while ($row = $this->fetch($stmt)) {
+        while ($row = $stmt->fetchAssociative()) {
             $this->loadPolicyArray($this->filterRule($row), $model);
         }
     }
@@ -179,11 +175,9 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
             throw new \Exception('invalid filter type');
         }
 
-        $stmt = $this->executeQuery($queryBuilder->from($this->policyTableName));
-        while ($row = $this->fetch($stmt)) {
-            $line = implode(', ', array_filter($row, function ($val) {
-                return '' != $val && !is_null($val);
-            }));
+        $stmt = $queryBuilder->from($this->policyTableName)->executeQuery();
+        while ($row = $stmt->fetchAssociative()) {
+            $line = implode(', ', array_filter($row, static fn ($val): bool => '' != $val && !is_null($val)));
             $this->loadPolicyLine(trim($line), $model);
         }
 
@@ -247,9 +241,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
             $sets[] = array_pad([], $columnsCount, '?');
         }
 
-        $valuesStr = implode(', ', array_map(function ($set) {
-            return '(' . implode(', ', $set) . ')';
-        }, $sets));
+        $valuesStr = implode(', ', array_map(static fn ($set): string => '(' . implode(', ', $set) . ')', $sets));
 
         $sql = 'INSERT INTO ' . $table . ' (' . implode(', ', $columns) . ')' .
             ' VALUES' . $valuesStr;
@@ -274,7 +266,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
             $queryBuilder->andWhere('v' . strval($key) . ' = ?')->setParameter($key + 1, $value);
         }
 
-        $this->executeQuery($queryBuilder->delete($this->policyTableName));
+        $queryBuilder->delete($this->policyTableName)->executeStatement();
     }
 
     /**
@@ -331,13 +323,13 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
                 $fieldIndex++;
             }
 
-            $stmt = $this->executeQuery($queryBuilder->select(...$this->columns)->from($this->policyTableName));
+            $stmt = $queryBuilder->select(...$this->columns)->from($this->policyTableName)->executeQuery();
 
-            while ($row = $this->fetch($stmt)) {
+            while ($row = $stmt->fetchAssociative()) {
                 $removedRules[] = $this->filterRule($row);
             }
 
-            $this->executeQuery($queryBuilder->delete($this->policyTableName));
+            $queryBuilder->delete($this->policyTableName)->executeStatement();
         });
 
         return $removedRules;
@@ -381,9 +373,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
             $queryBuilder->set('v' . strval($key), ':' . $placeholder)->setParameter($placeholder, $value);
         }
 
-        $queryBuilder->update($this->policyTableName);
-
-        $this->executeQuery($queryBuilder);
+        $queryBuilder->update($this->policyTableName)->executeStatement();
     }
 
     /**
@@ -484,33 +474,4 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
     {
         return $this->columns;
     }
-
-    /**
-     * @param \Doctrine\DBAL\Result|\Doctrine\DBAL\Driver\PDOStatement $stmt
-     *
-     * @return mixed
-     * @throws Exception
-     */
-    private function fetch($stmt)
-    {
-        if (method_exists($stmt, 'fetchAssociative')) {
-            return $stmt->fetchAssociative();
-        }
-
-        return $stmt->fetch();
-    }
-
-    /**
-     * Calls correct query execution method depending on Doctrine version and
-     * returns the result.
-     *
-     * @param \Doctrine\DBAL\Query\QueryBuilder $query
-     *
-     * @return mixed
-     */
-    private function executeQuery($query)
-    {
-        return method_exists($query, "executeQuery") ? $query->executeQuery() : $query->execute();
-    }
-
 }

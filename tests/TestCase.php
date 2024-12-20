@@ -33,7 +33,7 @@ class TestCase extends \PHPUnit\Framework\TestCase
         $conn = $adapter->getConnection();
         $queryBuilder = $conn->createQueryBuilder();
         $query = $queryBuilder->delete($tableName)->where('1 = 1');
-        method_exists($query, "executeQuery") ? $query->executeQuery() : $query->execute();
+        $query->executeStatement();
 
         $data = [
             ['p_type' => 'p', 'v0' => 'alice', 'v1' => 'data1', 'v2' => 'read'],
@@ -44,7 +44,7 @@ class TestCase extends \PHPUnit\Framework\TestCase
         ];
         foreach ($data as $row) {
             $query = $queryBuilder->insert($tableName)->values(array_combine(array_keys($row), array_fill(0, count($row), '?')))->setParameters(array_values($row));
-            method_exists($query, "executeQuery") ? $query->executeQuery() : $query->execute();
+            $query->executeStatement();
         }
     }
 

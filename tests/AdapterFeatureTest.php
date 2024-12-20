@@ -4,7 +4,6 @@ namespace CasbinAdapter\DBAL\Tests;
 
 use CasbinAdapter\DBAL\Adapter as DatabaseAdapter;
 use CasbinAdapter\DBAL\Filter;
-use Doctrine\DBAL\Query\Expression\CompositeExpression;
 use Doctrine\DBAL\Query\QueryBuilder;
 
 class AdapterFeatureTest extends TestCase

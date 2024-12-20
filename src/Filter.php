@@ -7,19 +7,19 @@ namespace CasbinAdapter\DBAL;
 /**
  * Class Filter
  *
- * @author techlee@qq.com
+ * @author leeqvip@gmail.com
  */
 class Filter
 {
     /**
      * @var string
      */
-    private $predicates = "";
+    private string $predicates = '';
 
     /**
      * @var array<int, mixed>|array<string, mixed>
      */
-    private $params = "";
+    private array $params = [];
 
     /**
      * Filter constructor.
