@@ -1,6 +1,6 @@
 # Doctrine DBAL Adapter for Casbin
 
-[![Build Status](https://github.com/php-casbin/dbal-adapter/actions/workflows/build.yml/badge.svg)](https://github.com/php-casbin/dbal-adapter/actions/workflows/build.yml)
+[![PHPUnit](https://github.com/php-casbin/dbal-adapter/actions/workflows/phpunit.yml/badge.svg)](https://github.com/php-casbin/dbal-adapter/actions/workflows/phpunit.yml)
 [![Coverage Status](https://coveralls.io/repos/github/php-casbin/dbal-adapter/badge.svg)](https://coveralls.io/github/php-casbin/dbal-adapter)
 [![Latest Stable Version](https://poser.pugx.org/casbin/dbal-adapter/v/stable)](https://packagist.org/packages/casbin/dbal-adapter)
 [![Total Downloads](https://poser.pugx.org/casbin/dbal-adapter/downloads)](https://packagist.org/packages/casbin/dbal-adapter)
