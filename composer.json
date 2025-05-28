@@ -18,7 +18,7 @@
     ],
     "license": "Apache-2.0",
     "require": {
-        "php": ">=8.0",
+        "php": ">=7.3",
         "casbin/casbin": "^4.0",
         "doctrine/dbal": "^3.9|^4.0",
         "predis/predis": "^2.0"
