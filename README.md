@@ -26,28 +26,45 @@ Via [Composer](https://getcomposer.org/).
 composer require casbin/dbal-adapter
 ```
 
-### Usage
+### Basic Usage (Without Redis Caching)
+
+This section describes how to use the adapter with a direct database connection, without leveraging Redis for caching.
+
+You can initialize the adapter by passing either a Doctrine DBAL connection parameter array or an existing `Doctrine\DBAL\Connection` instance to the `Adapter::newAdapter()` method or the `Adapter` constructor.
+
+**Example:**
 
 ```php
-
 require_once './vendor/autoload.php';
 
 use Casbin\Enforcer;
 use CasbinAdapter\DBAL\Adapter as DatabaseAdapter;
+use Doctrine\DBAL\DriverManager; // Required if creating a new connection object
 
-$config = [
-    // Either 'driver' with one of the following values:
-    // pdo_mysql,pdo_sqlite,pdo_pgsql,pdo_oci (unstable),pdo_sqlsrv
-    // mysqli,sqlanywhere,sqlsrv,ibm_db2 (unstable),drizzle_pdo_mysql
+// Option 1: Using DBAL connection parameters array
+$dbConnectionParams = [
+    // Supported drivers: pdo_mysql, pdo_sqlite, pdo_pgsql, pdo_oci, pdo_sqlsrv, 
+    // mysqli, sqlanywhere, sqlsrv, ibm_db2, drizzle_pdo_mysql
     'driver' => 'pdo_mysql',
     'host' => '127.0.0.1',
-    'dbname' => 'test',
+    'dbname' => 'casbin_db', // Your database name
     'user' => 'root',
     'password' => '',
-    'port' => '3306',
+    'port' => '3306', // Optional, defaults to driver's standard port
+    // 'policy_table_name' => 'casbin_rules', // Optional, defaults to 'casbin_rule'
 ];
 
-$adapter = DatabaseAdapter::newAdapter($config);
+// Initialize the Adapter with the DBAL parameters array (without Redis)
+$adapter = DatabaseAdapter::newAdapter($dbConnectionParams);
+// Alternatively, using the constructor:
+// $adapter = new DatabaseAdapter($dbConnectionParams);
+
+// Option 2: Using an existing Doctrine DBAL Connection instance
+// $dbalConnection = DriverManager::getConnection($dbConnectionParams);
+// $adapter = DatabaseAdapter::newAdapter($dbalConnection);
+// Or using the constructor:
+// $adapter = new DatabaseAdapter($dbalConnection);
+
 
 $e = new Enforcer('path/to/model.conf', $adapter);
 
@@ -62,15 +79,13 @@ if ($e->enforce($sub, $obj, $act) === true) {
 }
 ```
 
-### Redis Caching
+### Usage with Redis Caching
 
 To improve performance and reduce database load, the adapter supports caching policy data using [Redis](https://redis.io/). When enabled, Casbin policies will be fetched from Redis if available, falling back to the database if the cache is empty.
 
-#### Configuration
+To enable Redis caching, provide a Redis configuration array as the second argument when initializing the adapter. The first argument remains your Doctrine DBAL connection (either a parameters array or a `Connection` object).
 
-To enable Redis caching, pass a Redis configuration array as the second argument to the `Adapter::newAdapter()` method or the `Adapter` constructor.
-
-Available Redis configuration options:
+**Redis Configuration Options:**
 
 *   `host` (string): Hostname or IP address of the Redis server. Default: `'127.0.0.1'`.
 *   `port` (int): Port number of the Redis server. Default: `6379`.
@@ -86,16 +101,19 @@ require_once './vendor/autoload.php';
 
 use Casbin\Enforcer;
 use CasbinAdapter\DBAL\Adapter as DatabaseAdapter;
+use Doctrine\DBAL\DriverManager; // Required if creating a new connection object
 
-// Database configuration (as before)
-$dbConfig = [
+// Database connection parameters (can be an array or a Connection object)
+$dbConnectionParams = [
     'driver' => 'pdo_mysql',
     'host' => '127.0.0.1',
-    'dbname' => 'test',
+    'dbname' => 'casbin_db',
     'user' => 'root',
     'password' => '',
     'port' => '3306',
 ];
+// Example with DBAL connection object:
+// $dbalConnection = DriverManager::getConnection($dbConnectionParams);
 
 // Redis configuration
 $redisConfig = [
@@ -103,12 +121,16 @@ $redisConfig = [
     'port' => 6379,             // Optional, defaults to 6379
     'password' => null,         // Optional, defaults to null
     'database' => 0,            // Optional, defaults to 0
-    'ttl' => 7200,              // Optional, Cache policies for 2 hours
-    'prefix' => 'myapp_casbin:' // Optional, Custom prefix
+    'ttl' => 7200,              // Optional, Cache policies for 2 hours (default is 3600)
+    'prefix' => 'myapp_casbin:' // Optional, Custom prefix (default is 'casbin_policies:')
 ];
 
-// Initialize adapter with both DB and Redis configurations
-$adapter = DatabaseAdapter::newAdapter($dbConfig, $redisConfig);
+// Initialize adapter with DB parameters array and Redis configuration
+$adapter = DatabaseAdapter::newAdapter($dbConnectionParams, $redisConfig);
+// Or, using a DBAL Connection object:
+// $adapter = DatabaseAdapter::newAdapter($dbalConnection, $redisConfig);
+// Alternatively, using the constructor:
+// $adapter = new DatabaseAdapter($dbConnectionParams, $redisConfig);
 
 $e = new Enforcer('path/to/model.conf', $adapter);
 
