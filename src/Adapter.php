@@ -103,10 +103,10 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      * Adapter constructor.
      *
      * @param Connection|array $connection
-     * @param ?array $redisConfig
+     * @param array|RedisClient|null $redisOptions Redis configuration array or a Predis\Client instance.
      * @throws Exception
      */
-    public function __construct(Connection|array $connection, ?array $redisConfig = null)
+    public function __construct(Connection|array $connection, mixed $redisOptions = null)
     {
         if ($connection instanceof Connection) {
             $this->connection = $connection;
@@ -121,13 +121,20 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
             }
         }
 
-        if (is_array($redisConfig)) {
-            $this->redisHost = $redisConfig['host'] ?? null;
-            $this->redisPort = $redisConfig['port'] ?? 6379;
-            $this->redisPassword = $redisConfig['password'] ?? null;
-            $this->redisDatabase = $redisConfig['database'] ?? 0;
-            $this->cacheTTL = $redisConfig['ttl'] ?? 3600;
-            $this->redisPrefix = $redisConfig['prefix'] ?? 'casbin_policies:';
+        if ($redisOptions instanceof RedisClient) {
+            $this->redisClient = $redisOptions;
+            // Note: If a client is injected, properties like $redisHost, $redisPort, etc., are bypassed.
+            // The $redisPrefix and $cacheTTL will use their default values unless $redisOptions
+            // was an array that also happened to set them (see 'else if' block).
+            // This means an injected client is assumed to be fully pre-configured regarding its connection,
+            // and the adapter will use its own default prefix/TTL or those set by a config array.
+        } elseif (is_array($redisOptions)) {
+            $this->redisHost = $redisOptions['host'] ?? null;
+            $this->redisPort = $redisOptions['port'] ?? 6379;
+            $this->redisPassword = $redisOptions['password'] ?? null;
+            $this->redisDatabase = $redisOptions['database'] ?? 0;
+            $this->cacheTTL = $redisOptions['ttl'] ?? $this->cacheTTL; // Use default if not set
+            $this->redisPrefix = $redisOptions['prefix'] ?? $this->redisPrefix; // Use default if not set
 
             if (!is_null($this->redisHost)) {
                 $this->redisClient = new RedisClient([
@@ -139,6 +146,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
                 ]);
             }
         }
+        // If $redisOptions is null, $this->redisClient remains null, and no Redis caching is used.
 
         $this->initTable();
     }
@@ -147,14 +155,14 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      * New a Adapter.
      *
      * @param Connection|array $connection
-     * @param ?array $redisConfig
+     * @param array|RedisClient|null $redisOptions Redis configuration array or a Predis\Client instance.
      *
      * @return Adapter
      * @throws Exception
      */
-    public static function newAdapter(Connection|array $connection, ?array $redisConfig = null): Adapter
+    public static function newAdapter(Connection|array $connection, mixed $redisOptions = null): Adapter
     {
-        return new static($connection, $redisConfig);
+        return new static($connection, $redisOptions);
     }
 
     /**
