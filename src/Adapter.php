@@ -14,6 +14,7 @@ use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\Expression\CompositeExpression;
 use Doctrine\DBAL\Schema\Schema;
+use Predis\Client as RedisClient;
 use Throwable;
 
 /**
@@ -31,6 +32,55 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      * @var Connection
      */
     protected Connection $connection;
+
+    /**
+     * Redis client instance.
+     *
+     * @var ?RedisClient
+     */
+    protected ?RedisClient $redisClient = null;
+
+    /**
+     * Redis host.
+     *
+     * @var ?string
+     */
+    protected ?string $redisHost = null;
+
+    /**
+     * Redis port.
+     *
+     * @var ?int
+     */
+    protected ?int $redisPort = null;
+
+    /**
+     * Redis password.
+     *
+     * @var ?string
+     */
+    protected ?string $redisPassword = null;
+
+    /**
+     * Redis database.
+     *
+     * @var ?int
+     */
+    protected ?int $redisDatabase = null;
+
+    /**
+     * Cache TTL in seconds.
+     *
+     * @var int
+     */
+    protected int $cacheTTL = 3600;
+
+    /**
+     * Redis key prefix.
+     *
+     * @var string
+     */
+    protected string $redisPrefix = 'casbin_policies:';
 
     /**
      * Casbin policies table name.
@@ -53,9 +103,10 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      * Adapter constructor.
      *
      * @param Connection|array $connection
+     * @param array|RedisClient|null $redisOptions Redis configuration array or a Predis\Client instance.
      * @throws Exception
      */
-    public function __construct(Connection|array $connection)
+    public function __construct(Connection|array $connection, mixed $redisOptions = null)
     {
         if ($connection instanceof Connection) {
             $this->connection = $connection;
@@ -70,6 +121,33 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
             }
         }
 
+        if ($redisOptions instanceof RedisClient) {
+            $this->redisClient = $redisOptions;
+            // Note: If a client is injected, properties like $redisHost, $redisPort, etc., are bypassed.
+            // The $redisPrefix and $cacheTTL will use their default values unless $redisOptions
+            // was an array that also happened to set them (see 'else if' block).
+            // This means an injected client is assumed to be fully pre-configured regarding its connection,
+            // and the adapter will use its own default prefix/TTL or those set by a config array.
+        } elseif (is_array($redisOptions)) {
+            $this->redisHost = $redisOptions['host'] ?? null;
+            $this->redisPort = $redisOptions['port'] ?? 6379;
+            $this->redisPassword = $redisOptions['password'] ?? null;
+            $this->redisDatabase = $redisOptions['database'] ?? 0;
+            $this->cacheTTL = $redisOptions['ttl'] ?? $this->cacheTTL; // Use default if not set
+            $this->redisPrefix = $redisOptions['prefix'] ?? $this->redisPrefix; // Use default if not set
+
+            if (!is_null($this->redisHost)) {
+                $this->redisClient = new RedisClient([
+                    'scheme' => 'tcp',
+                    'host'   => $this->redisHost,
+                    'port'   => $this->redisPort,
+                    'password' => $this->redisPassword,
+                    'database' => $this->redisDatabase,
+                ]);
+            }
+        }
+        // If $redisOptions is null, $this->redisClient remains null, and no Redis caching is used.
+
         $this->initTable();
     }
 
@@ -77,13 +155,14 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      * New a Adapter.
      *
      * @param Connection|array $connection
+     * @param array|RedisClient|null $redisOptions Redis configuration array or a Predis\Client instance.
      *
      * @return Adapter
      * @throws Exception
      */
-    public static function newAdapter(Connection|array $connection): Adapter
+    public static function newAdapter(Connection|array $connection, mixed $redisOptions = null): Adapter
     {
-        return new static($connection);
+        return new static($connection, $redisOptions);
     }
 
     /**
@@ -117,8 +196,30 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      * @return int|string
      * @throws Exception
      */
+    protected function clearCache(): void
+    {
+        if ($this->redisClient instanceof RedisClient) {
+            $cacheKeyAllPolicies = "{$this->redisPrefix}all_policies";
+            $this->redisClient->del([$cacheKeyAllPolicies]);
+
+            // Note: Deleting filtered policies by pattern (e.g., {$this->redisPrefix}filtered_policies:*)
+            // is not straightforward or efficient with Predis without SCAN or Lua.
+            // For this implementation, we are only clearing the 'all_policies' cache.
+            // A more robust solution for filtered policies might involve maintaining a list of keys
+            // or using Redis sets/tags if granular deletion of filtered caches is required.
+        }
+    }
+
+    /**
+     * @param $pType
+     * @param array $rule
+     *
+     * @return int|string
+     * @throws Exception
+     */
     public function savePolicyLine(string $pType, array $rule): int|string
     {
+        $this->clearCache();
         $queryBuilder = $this->connection->createQueryBuilder();
         $queryBuilder
             ->insert($this->policyTableName)
@@ -142,11 +243,38 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      */
     public function loadPolicy(Model $model): void
     {
+        $cacheKey = "{$this->redisPrefix}all_policies";
+
+        if ($this->redisClient instanceof RedisClient && $this->redisClient->exists($cacheKey)) {
+            $cachedPolicies = $this->redisClient->get($cacheKey);
+            if (!is_null($cachedPolicies)) {
+                $policies = json_decode($cachedPolicies, true);
+                if (is_array($policies)) {
+                    foreach ($policies as $row) {
+                        // Ensure $row is an array, as filterRule expects an array
+                        if (is_array($row)) {
+                            $this->loadPolicyArray($this->filterRule($row), $model);
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+
         $queryBuilder = $this->connection->createQueryBuilder();
         $stmt = $queryBuilder->select('p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5')->from($this->policyTableName)->executeQuery();
 
+        $policiesToCache = [];
         while ($row = $stmt->fetchAssociative()) {
-            $this->loadPolicyArray($this->filterRule($row), $model);
+            // Ensure $row is an array before processing and caching
+            if (is_array($row)) {
+                $policiesToCache[] = $row; // Store the raw row for caching
+                $this->loadPolicyArray($this->filterRule($row), $model);
+            }
+        }
+
+        if ($this->redisClient instanceof RedisClient && !empty($policiesToCache)) {
+            $this->redisClient->setex($cacheKey, $this->cacheTTL, json_encode($policiesToCache));
         }
     }
 
@@ -159,26 +287,71 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      */
     public function loadFilteredPolicy(Model $model, $filter): void
     {
+        if ($filter instanceof Closure) {
+            // Bypass caching for Closures
+            $queryBuilder = $this->connection->createQueryBuilder();
+            $queryBuilder->select('p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5');
+            $filter($queryBuilder);
+            $stmt = $queryBuilder->from($this->policyTableName)->executeQuery();
+            while ($row = $stmt->fetchAssociative()) {
+                $line = implode(', ', array_filter($row, static fn ($val): bool => '' != $val && !is_null($val)));
+                $this->loadPolicyLine(trim($line), $model);
+            }
+            $this->setFiltered(true);
+            return;
+        }
+
+        $filterRepresentation = '';
+        if (is_string($filter)) {
+            $filterRepresentation = $filter;
+        } elseif ($filter instanceof CompositeExpression) {
+            $filterRepresentation = (string) $filter;
+        } elseif ($filter instanceof Filter) {
+            $filterRepresentation = json_encode(['predicates' => $filter->getPredicates(), 'params' => $filter->getParams()]);
+        } else {
+            throw new \Exception('invalid filter type');
+        }
+
+        $cacheKey = "{$this->redisPrefix}filtered_policies:" . md5($filterRepresentation);
+
+        if ($this->redisClient instanceof RedisClient && $this->redisClient->exists($cacheKey)) {
+            $cachedPolicyLines = $this->redisClient->get($cacheKey);
+            if (!is_null($cachedPolicyLines)) {
+                $policyLines = json_decode($cachedPolicyLines, true);
+                if (is_array($policyLines)) {
+                    foreach ($policyLines as $line) {
+                        $this->loadPolicyLine(trim($line), $model);
+                    }
+                    $this->setFiltered(true);
+                    return;
+                }
+            }
+        }
+
         $queryBuilder = $this->connection->createQueryBuilder();
         $queryBuilder->select('p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5');
 
         if (is_string($filter) || $filter instanceof CompositeExpression) {
             $queryBuilder->where($filter);
-        } else if ($filter instanceof Filter) {
+        } elseif ($filter instanceof Filter) {
             $queryBuilder->where($filter->getPredicates());
             foreach ($filter->getParams() as $key => $value) {
                 $queryBuilder->setParameter($key, $value);
             }
-        } else if ($filter instanceof Closure) {
-            $filter($queryBuilder);
-        } else {
-            throw new \Exception('invalid filter type');
         }
+        // Closure case handled above, other invalid types would have thrown an exception
 
         $stmt = $queryBuilder->from($this->policyTableName)->executeQuery();
+        $policyLinesToCache = [];
         while ($row = $stmt->fetchAssociative()) {
             $line = implode(', ', array_filter($row, static fn ($val): bool => '' != $val && !is_null($val)));
-            $this->loadPolicyLine(trim($line), $model);
+            $trimmedLine = trim($line);
+            $this->loadPolicyLine($trimmedLine, $model);
+            $policyLinesToCache[] = $trimmedLine;
+        }
+
+        if ($this->redisClient instanceof RedisClient && !empty($policyLinesToCache)) {
+            $this->redisClient->setex($cacheKey, $this->cacheTTL, json_encode($policyLinesToCache));
         }
 
         $this->setFiltered(true);
@@ -192,6 +365,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      */
     public function savePolicy(Model $model): void
     {
+        $this->clearCache(); // Called when saving the whole model
         foreach ($model['p'] as $pType => $ast) {
             foreach ($ast->policy as $rule) {
                 $this->savePolicyLine($pType, $rule);
@@ -215,6 +389,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      */
     public function addPolicy(string $sec, string $ptype, array $rule): void
     {
+        $this->clearCache();
         $this->savePolicyLine($ptype, $rule);
     }
 
@@ -229,6 +404,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      */
     public function addPolicies(string $sec, string $ptype, array $rules): void
     {
+        $this->clearCache();
         $table = $this->policyTableName;
         $columns = ['p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5'];
         $values = [];
@@ -279,6 +455,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      */
     public function removePolicy(string $sec, string $ptype, array $rule): void
     {
+        $this->clearCache();
         $this->_removePolicy($this->connection, $sec, $ptype, $rule);
     }
 
@@ -293,6 +470,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      */
     public function removePolicies(string $sec, string $ptype, array $rules): void
     {
+        $this->clearCache();
         $this->connection->transactional(function (Connection $conn) use ($sec, $ptype, $rules) {
             foreach ($rules as $rule) {
                 $this->_removePolicy($conn, $sec, $ptype, $rule);
@@ -347,6 +525,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      */
     public function removeFilteredPolicy(string $sec, string $ptype, int $fieldIndex, string ...$fieldValues): void
     {
+        $this->clearCache();
         $this->_removeFilteredPolicy($sec, $ptype, $fieldIndex, ...$fieldValues);
     }
 
@@ -360,6 +539,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      */
     public function updatePolicy(string $sec, string $ptype, array $oldRule, array $newPolicy): void
     {
+        $this->clearCache();
         $queryBuilder = $this->connection->createQueryBuilder();
         $queryBuilder->where('p_type = :ptype')->setParameter("ptype", $ptype);
 
@@ -388,6 +568,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      */
     public function updatePolicies(string $sec, string $ptype, array $oldRules, array $newRules): void
     {
+        $this->clearCache();
         $this->connection->transactional(function () use ($sec, $ptype, $oldRules, $newRules) {
             foreach ($oldRules as $i => $oldRule) {
                 $this->updatePolicy($sec, $ptype, $oldRule, $newRules[$i]);
@@ -406,6 +587,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
      */
     public function updateFilteredPolicies(string $sec, string $ptype, array $newRules, int $fieldIndex, ?string ...$fieldValues): array
     {
+        $this->clearCache();
         $oldRules = [];
         $this->getConnection()->transactional(function ($conn) use ($sec, $ptype, $newRules, $fieldIndex, $fieldValues, &$oldRules) {
             $oldRules = $this->_removeFilteredPolicy($sec, $ptype, $fieldIndex, ...$fieldValues);
@@ -473,5 +655,30 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
     public function getColumns(): array
     {
         return $this->columns;
+    }
+
+    /**
+     * Preheats the cache by loading all policies into Redis.
+     *
+     * @return bool True on success, false if Redis is not configured or an error occurs.
+     */
+    public function preheatCache(): bool
+    {
+        if (!$this->redisClient instanceof RedisClient) {
+            // Optionally, log that Redis is not configured or available.
+            return false;
+        }
+
+        try {
+            // Create a new empty model instance for the loadPolicy call.
+            // The state of this model instance isn't used beyond triggering the load.
+            $tempModel = new Model();
+            $this->loadPolicy($tempModel); // This should populate the cache for all_policies
+            return true;
+        } catch (\Throwable $e) {
+            // Optionally, log the exception $e->getMessage()
+            // Error during policy loading (e.g., database issue)
+            return false;
+        }
     }
 }
