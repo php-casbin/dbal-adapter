@@ -202,7 +202,7 @@ class Adapter implements FilteredAdapter , BatchAdapter , UpdatableAdapter
 						$pattern       = "{$this->redisPrefix}filtered_policies:*";
 						$cursor        = 0;
 						$batchSize     = 50; // 每批处理的 key 数
-						$maxIterations = 100;
+						$maxIterations = 100; // 限制最大循环次数
 						$iteration     = 0;
 						do {
 								if ($iteration >= $maxIterations) {
