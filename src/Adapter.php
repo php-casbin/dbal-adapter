@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace CasbinAdapter\DBAL;
 
-use Casbin\Model\Model;
 use Casbin\Persist\AdapterHelper;
-use Casbin\Persist\{BatchAdapter , FilteredAdapter , UpdatableAdapter};
+use Casbin\Model\Model;
+use Casbin\Persist\{BatchAdapter, FilteredAdapter, UpdatableAdapter};
 use Closure;
 use Doctrine\DBAL\Configuration;
-use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\{DBALException , Exception};
+use Doctrine\DBAL\{DBALException, Exception};
 use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\Expression\CompositeExpression;
 use Doctrine\DBAL\Schema\Schema;
 use Predis\Client as RedisClient;
@@ -97,7 +97,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
     /**
      * @var string[]
      */
-    protected array $columns = ['p_type' , 'v0' , 'v1' , 'v2' , 'v3' , 'v4' , 'v5'];
+    protected array $columns = ['p_type', 'v0', 'v1', 'v2', 'v3', 'v4', 'v5'];
 
     /**
      * Adapter constructor.
@@ -351,7 +351,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
 
         if (is_string($filter) || $filter instanceof CompositeExpression) {
             $queryBuilder->where($filter);
-        } elseif ($filter instanceof Filter) {
+        } else if ($filter instanceof Filter) {
             $queryBuilder->where($filter->getPredicates());
             foreach ($filter->getParams() as $key => $value) {
                 $queryBuilder->setParameter($key, $value);
@@ -363,7 +363,7 @@ class Adapter implements FilteredAdapter, BatchAdapter, UpdatableAdapter
         }
         // Closure case handled above, other invalid types would have thrown an exception
 
-        $stmt               = $queryBuilder->from($this->policyTableName)->executeQuery();
+        $stmt = $queryBuilder->from($this->policyTableName)->executeQuery();
         $policyLinesToCache = [];
         while ($row = $stmt->fetchAssociative()) {
             $line        = implode(', ', array_filter($row, static fn ($val): bool => '' != $val && !is_null($val)));
